@@ -14,7 +14,7 @@ from discord import app_commands
 from . import config
 from .llm import extract_metadata
 from .vault import append_capture
-from .git_ops import sync_vault, pull
+from .git_ops import pull, commit, push
 from .distill import distillation_scheduler
 
 logger = logging.getLogger(__name__)
@@ -69,14 +69,18 @@ class PersonaBot(discord.Client):
         try:
             # Show typing indicator while processing
             async with channel.typing():
-                # 1. Extract metadata via LLM
+                # 1. Pull latest vault state first
+                pull(config.VAULT_PATH)
+
+                # 2. Extract metadata via LLM
                 extraction = await extract_metadata(text)
 
-                # 2. Append to vault
+                # 3. Append to vault
                 capture_path = append_capture(text, extraction.model_dump())
 
-                # 3. Git sync
-                sync_success = sync_vault(config.VAULT_PATH)
+                # 4. Commit and push (no pull needed, we already pulled)
+                commit(config.VAULT_PATH)
+                sync_success = push(config.VAULT_PATH)
 
             # 4. Reply with confirmation
             status = "✅" if sync_success else "⚠️ (saved locally, sync pending)"
@@ -109,9 +113,11 @@ async def log_command(interaction: discord.Interaction, text: str):
     await interaction.response.defer(thinking=True)
 
     try:
+        pull(config.VAULT_PATH)
         extraction = await extract_metadata(text)
         capture_path = append_capture(text, extraction.model_dump())
-        sync_success = sync_vault(config.VAULT_PATH)
+        commit(config.VAULT_PATH)
+        sync_success = push(config.VAULT_PATH)
 
         status = "✅" if sync_success else "⚠️ (saved locally, sync pending)"
         await interaction.followup.send(

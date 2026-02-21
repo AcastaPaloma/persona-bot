@@ -31,7 +31,7 @@ Rules:
 """
 
 MAX_RETRIES = 3
-RETRY_BACKOFF = 2  # seconds, doubles each attempt
+RETRY_BACKOFF = 10  # seconds — GitHub Models has aggressive rate limits
 
 
 async def extract_metadata(text: str) -> Extraction:
@@ -51,13 +51,12 @@ async def extract_metadata(text: str) -> Extraction:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": text},
         ],
-        "temperature": 0.3,
-        "max_tokens": 300,
+        "max_completion_tokens": 300,
     }
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=60) as client:
                 response = await client.post(
                     config.LLM_ENDPOINT,
                     json=payload,
@@ -66,9 +65,22 @@ async def extract_metadata(text: str) -> Extraction:
                 response.raise_for_status()
                 data = response.json()
 
+            # Log raw response for debugging
             content = data["choices"][0]["message"]["content"]
-            # Strip markdown code fences if the model wraps the JSON
+            logger.debug("LLM raw response: %s", content[:500] if content else "(empty)")
+
+            # Handle empty responses
+            if not content or not content.strip():
+                raise ValueError("LLM returned empty content")
+
             content = content.strip()
+
+            # Strip <think>...</think> blocks from reasoning models (e.g. Phi-4)
+            if "<think>" in content:
+                import re
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+            # Strip markdown code fences if the model wraps the JSON
             if content.startswith("```"):
                 content = content.split("\n", 1)[1]  # remove opening fence
                 content = content.rsplit("```", 1)[0]  # remove closing fence
@@ -97,7 +109,7 @@ async def extract_metadata(text: str) -> Extraction:
             )
 
         if attempt < MAX_RETRIES:
-            wait = RETRY_BACKOFF * (2 ** (attempt - 1))
+            wait = RETRY_BACKOFF * attempt  # 10s, 20s
             logger.info("Retrying in %ds...", wait)
             await asyncio.sleep(wait)
 

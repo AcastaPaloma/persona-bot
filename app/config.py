@@ -24,7 +24,7 @@ VAULT_PATH: str = ""
 
 # ── Optional (with defaults) ─────────────────────────────────────────────────
 TIMEZONE: str = "America/Toronto"
-LLM_MODEL: str = "openai/gpt-5"
+LLM_MODEL: str = "openai/gpt-4.1-mini"
 LLM_ENDPOINT: str = "https://models.github.ai/inference/chat/completions"
 DISTILL_HOUR: int = 23  # 24-h clock, when nightly distillation runs
 DISTILL_MINUTE: int = 59
