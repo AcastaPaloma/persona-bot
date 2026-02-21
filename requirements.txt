@@ -1,0 +1,5 @@
+discord.py
+httpx
+pydantic
+python-dotenv
+pytz
