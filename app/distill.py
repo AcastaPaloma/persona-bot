@@ -79,50 +79,165 @@ def _scan_vault_tree(vault_path: str) -> str:
     return "\n".join(lines)
 
 
+def _scan_link_graph(vault_path: str) -> str:
+    """Scan every .md file for [[wikilinks]] and build a link graph.
+
+    Returns a readable map showing which files link to what, plus backlinks.
+    Does NOT read file contents beyond extracting link patterns.
+
+    Example output:
+        03-People/Kuan.md
+          → [[Guidelines]], [[Brain-Tumor-MRI-Platform]]
+        05-Topics/BJJ/Jiu Jitsu.md
+          → [[Takedowns]], [[Positional Escapes]]
+          ← 05-Topics/Takedowns.md, 01-Daily/Daily/2026-02-18.md
+    """
+    root = Path(vault_path)
+    wikilink_re = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+
+    # Forward links: file → [targets]
+    forward: Dict[str, List[str]] = {}
+    # Backlinks: target → [source files]
+    backlinks: Dict[str, List[str]] = {}
+
+    for md_file in root.rglob("*.md"):
+        rel = str(md_file.relative_to(root)).replace("\\", "/")
+
+        # Skip hidden dirs
+        if any(part.startswith(".") for part in md_file.parts):
+            continue
+
+        try:
+            text = md_file.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        links = wikilink_re.findall(text)
+        if not links:
+            continue
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_links = []
+        for link in links:
+            if link not in seen:
+                seen.add(link)
+                unique_links.append(link)
+
+        forward[rel] = unique_links
+
+        for link in unique_links:
+            backlinks.setdefault(link, []).append(rel)
+
+    # Build readable output
+    lines = []
+    all_files = sorted(set(list(forward.keys()) + [k for k in backlinks.keys() if "/" in k]))
+
+    for f in forward:
+        lines.append(f"{f}")
+        lines.append(f"  → {', '.join('[[' + l + ']]' for l in forward[f])}")
+        # Check if this file has backlinks (by its stem name)
+        stem = Path(f).stem
+        if stem in backlinks:
+            sources = [s for s in backlinks[stem] if s != f]
+            if sources:
+                lines.append(f"  ← {', '.join(sources)}")
+
+    return "\n".join(lines)
+
+
 DISTILL_SYSTEM_PROMPT = """\
-You are a personal knowledge assistant for Kuan. Your job is to distill \
-today's raw capture into organized knowledge in an Obsidian vault.
+You are Kuan's knowledge librarian. You organize his second brain — an \
+Obsidian vault that serves as a RAG-style knowledge base about his life, \
+thoughts, projects, and interests.
 
-You will receive:
-1. Today's raw capture (stream of consciousness notes)
-2. The current vault structure (file/folder names only)
+Every night, you receive the day's raw capture (stream of consciousness) \
+and the full vault structure (file/folder names). Your job is to \
+repartition today's information into the vault: sorting it into the right \
+places, connecting it to what already exists, and growing the brain \
+organically.
 
-Your tasks:
-1. Create a clean daily summary note for 01-Daily/Daily/{date}.md
-2. Decide if any new topic notes should be created in 05-Topics/
-3. Decide if any project notes should be created/updated in 04-Projects/
-4. Identify meaningful [[wikilinks]] — connections between concepts
-5. STRONGLY EMPHASIZE ON CREATING WIKILINKS BETWEEN NOTES.
-6. Note any personality observations for 03-People/Kuan.md
+## What you receive
+1. Today's raw capture (unstructured notes, ideas, rants, updates)
+2. The current vault tree (all folder and file names — NO file contents)
+3. The link graph (which files link to which via [[wikilinks]], including backlinks)
 
-Rules:
-- ONLY return valid JSON, no markdown, no explanation
-- Use [[wikilinks]] for medium+ strength relations (including abstract/emotional)
-- DO NOT HALLUCINATE WIKILINKS. ONLY CREATE WIKILINKS IF THE TOPIC/PROJECT ALREADY EXISTS IN THE VAULT TREE. CREATE LINKS TO NOTES/FOLDERS THAT ALREADY EXIST.
-- Don't create noise — only create files/links that add real value
-- Don't duplicate existing files — check the vault tree before creating
-- Daily note should be concise, high-signal summary
-- If nothing meaningful was captured today, return minimal output
+## What you produce
+A JSON object with actions to execute.
 
-Return this exact JSON structure:
+## Your decision framework
+
+### 1. ALWAYS: Create the daily note
+Create `01-Daily/Daily/{date}.md` — a clean, high-signal summary of the \
+day. This note is the HUB: it should contain [[wikilinks]] to every \
+relevant existing or newly-created note. Think of it as today's index card.
+
+### 2. First instinct: Update existing notes
+Before creating anything, check the vault tree. If today's capture mentions \
+a project, person, topic, or concept that already has a note — APPEND new \
+information to that existing note. This is your default action. Examples:
+- Mentioned BJJ training → append to existing 05-Topics/BJJ/ notes
+- Progress on Brain Tumor MRI → append to 04-Projects/Brain-Tumor-MRI-Platform/
+- Something about Grandmother → append to 03-People/Grandmother.md
+
+### 3. When warranted: Create new notes in the RIGHT folder
+If something genuinely new comes up that has no home in the vault, create \
+a note for it — but place it in the CORRECT folder:
+- New person → `03-People/PersonName.md`
+- New project → `04-Projects/ProjectName/README.md` (create folder + file)
+- New topic → `05-Topics/TopicName.md` or `05-Topics/Category/TopicName.md`
+- School-related → `06-School/`
+DO NOT create notes at the vault root. Every note belongs in a subfolder.
+
+### 4. Only when needed: Create new folders
+Only create a new folder when the new concept is big enough to warrant \
+multiple notes underneath it (e.g. a new major project). A single note \
+does not justify a new folder.
+
+## Vault structure (FIXED root — do not add root folders)
+```
+01-Daily/        ← daily captures + Daily/ summaries
+03-People/       ← personality profiles
+04-Projects/     ← project folders with notes inside
+05-Topics/       ← topic notes, optionally grouped in subfolders
+06-School/       ← academic notes
+99-Archive/      ← retired material
+```
+
+## Wikilink philosophy
+- [[wikilinks]] are the BACKBONE of the second brain
+- Link from the daily note to every relevant existing note
+- Link from newly created/updated notes back to related concepts
+- Include abstract/emotional connections, not just concrete ones
+- ONLY link to notes that exist in the vault tree or that you are creating
+- Do NOT hallucinate links to nonexistent files
+
+## Rules
+- Return ONLY valid JSON, no markdown fences, no explanation
+- Keep daily note concise but rich with [[wikilinks]]
+- When appending, add a dated section header (## {date}) so updates are traceable
+- Never delete or rewrite existing content
+- If today's capture is trivial (just greetings, tests), return minimal output
+
+Return this exact JSON:
 {{
   "daily_note": {{
-    "content": "<full markdown content for 01-Daily/Daily/{date}.md>"
+    "content": "<full markdown for 01-Daily/Daily/{date}.md>"
   }},
   "new_files": [
     {{"path": "<relative path from vault root>", "content": "<full markdown>"}}
   ],
   "append_files": [
-    {{"path": "<relative path from vault root>", "content": "<content to append>"}}
+    {{"path": "<relative path to existing file>", "content": "<content to append>"}}
   ],
-  "profile_update": "<text to append to Kuan.md signals section, or null if none>",
-  "reasoning": "<1-2 sentences explaining what you did and why>"
+  "profile_update": "<text to append to Kuan.md, or null if nothing notable>",
+  "reasoning": "<1-2 sentences: what you did, why, what you linked>"
 }}
 """
 
 
-async def _call_llm_for_distillation(capture_text: str, vault_tree: str, date_str: str) -> dict:
-    """Send capture + vault tree to LLM and get back structured actions."""
+async def _call_llm_for_distillation(capture_text: str, vault_tree: str, link_graph: str, date_str: str) -> dict:
+    """Send capture + vault tree + link graph to LLM and get back structured actions."""
     headers = {
         "Authorization": f"Bearer {config.GITHUB_TOKEN}",
         "Content-Type": "application/json",
@@ -136,6 +251,12 @@ async def _call_llm_for_distillation(capture_text: str, vault_tree: str, date_st
 
 ```
 {vault_tree}
+```
+
+## Link Graph (which files connect to what)
+
+```
+{link_graph}
 ```
 
 Now distill this into organized knowledge. Return JSON only."""
@@ -265,13 +386,15 @@ async def run_distillation() -> bool:
         logger.info("No captures today — skipping distillation")
         return True
 
-    # 2. Scan vault tree
+    # 2. Scan vault tree and link graph
     vault_tree = _scan_vault_tree(config.VAULT_PATH)
-    logger.info("Vault tree scanned: %d lines", vault_tree.count("\n") + 1)
+    link_graph = _scan_link_graph(config.VAULT_PATH)
+    logger.info("Vault tree scanned: %d lines, link graph: %d lines",
+                vault_tree.count("\n") + 1, link_graph.count("\n") + 1)
 
     # 3. Call LLM for distillation actions
     try:
-        actions = await _call_llm_for_distillation(captures, vault_tree, date_str)
+        actions = await _call_llm_for_distillation(captures, vault_tree, link_graph, date_str)
     except Exception as e:
         logger.error("Distillation LLM call failed: %s", e)
         return False

@@ -58,42 +58,42 @@ def _create_frontmatter(dt: datetime) -> str:
 
 
 def _format_entry(raw_text: str, metadata: Dict, dt: datetime) -> str:
-    """Format a single capture entry as Obsidian-compatible markdown."""
+    """Format a single capture entry as Obsidian-compatible markdown.
+
+    The summary is the main content. Raw text goes in a collapsed callout
+    so captures stay concise and high-signal.
+    """
     timestamp = dt.strftime("%H:%M")
+    mood = metadata.get("mood", "")
+    summary = metadata.get("summary", "")
+    topics = metadata.get("topics", [])
+    projects = metadata.get("projects", [])
 
-    # Build tag string from topics
-    tags = ""
-    if metadata.get("topics"):
-        tag_list = " ".join(f"#{t.replace(' ', '-')}" for t in metadata["topics"])
-        tags = f"\n{tag_list}\n"
+    # Main line: timestamp + summary
+    entry = f"## {timestamp}"
+    if mood:
+        entry += f" — {mood}"
+    entry += "\n\n"
 
-    # Build metadata block
-    meta_lines = []
-    if metadata.get("mood"):
-        meta_lines.append(f"**Mood**: {metadata['mood']}")
-    if metadata.get("summary"):
-        meta_lines.append(f"**Summary**: {metadata['summary']}")
-    if metadata.get("projects"):
-        projects = ", ".join(metadata["projects"])
-        meta_lines.append(f"**Projects**: {projects}")
+    if summary:
+        entry += f"{summary}\n\n"
 
-    meta_block = "\n".join(meta_lines)
+    # Tags from topics
+    if topics:
+        tag_list = " ".join(f"#{t.replace(' ', '-')}" for t in topics)
+        entry += f"{tag_list}\n\n"
 
-    entry = (
-        f"## {timestamp}\n\n"
-        f"{raw_text.strip()}\n\n"
-    )
+    # Projects as wikilinks
+    if projects:
+        project_links = ", ".join(f"[[{p}]]" for p in projects)
+        entry += f"**Projects**: {project_links}\n\n"
 
-    if meta_block:
-        entry += (
-            f"> [!info]- Metadata\n"
-        )
-        for line in meta_lines:
+    # Raw text in collapsed callout (not the main content)
+    if raw_text and raw_text.strip():
+        entry += "> [!quote]- Raw\n"
+        for line in raw_text.strip().splitlines():
             entry += f"> {line}\n"
         entry += "\n"
-
-    if tags:
-        entry += f"{tags}\n"
 
     entry += "---\n\n"
     return entry
