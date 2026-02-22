@@ -270,6 +270,20 @@ Now distill this into organized knowledge. Return JSON only."""
         "max_completion_tokens": 2000,
     }
 
+    # Debug: log payload size breakdown
+    import json as _json
+    payload_bytes = len(_json.dumps(payload).encode("utf-8"))
+    logger.info(
+        "Distillation payload: %d bytes total | system prompt: %d chars | user prompt: %d chars | "
+        "capture: %d chars | vault tree: %d chars | link graph: %d chars",
+        payload_bytes,
+        len(DISTILL_SYSTEM_PROMPT),
+        len(user_prompt),
+        len(capture_text),
+        len(vault_tree),
+        len(link_graph),
+    )
+
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
             config.LLM_ENDPOINT,

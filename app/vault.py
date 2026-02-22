@@ -88,13 +88,6 @@ def _format_entry(raw_text: str, metadata: Dict, dt: datetime) -> str:
         project_links = ", ".join(f"[[{p}]]" for p in projects)
         entry += f"**Projects**: {project_links}\n\n"
 
-    # Raw text in collapsed callout (not the main content)
-    if raw_text and raw_text.strip():
-        entry += "> [!quote]- Raw\n"
-        for line in raw_text.strip().splitlines():
-            entry += f"> {line}\n"
-        entry += "\n"
-
     entry += "---\n\n"
     return entry
 
