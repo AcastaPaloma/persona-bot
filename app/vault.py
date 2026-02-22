@@ -83,10 +83,11 @@ def _format_entry(raw_text: str, metadata: Dict, dt: datetime) -> str:
         tag_list = " ".join(f"#{t.replace(' ', '-')}" for t in topics)
         entry += f"{tag_list}\n\n"
 
-    # Projects as wikilinks
+    # Projects as plain text (wikilinks are created during distillation,
+    # which has vault context — capture LLM doesn't, so it halluccinates links)
     if projects:
-        project_links = ", ".join(f"[[{p}]]" for p in projects)
-        entry += f"**Projects**: {project_links}\n\n"
+        project_list = ", ".join(projects)
+        entry += f"**Projects**: {project_list}\n\n"
 
     entry += "---\n\n"
     return entry

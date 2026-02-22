@@ -60,10 +60,14 @@ def commit(vault_path: str, message: str = "vault: automated capture") -> bool:
         logger.info("No changes to commit")
         return False
 
-    _run_git(vault_path, ["add", "-A"])
-    _run_git(vault_path, ["commit", "-m", message])
-    logger.info("Committed: %s", message)
-    return True
+    try:
+        _run_git(vault_path, ["add", "-A"])
+        _run_git(vault_path, ["commit", "-m", message])
+        logger.info("Committed: %s", message)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error("Git commit failed: %s", e.stderr[:500] if e.stderr else str(e))
+        return False
 
 
 def push(vault_path: str) -> bool:
