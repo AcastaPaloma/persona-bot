@@ -2,22 +2,37 @@
 
 Primary interaction: DM the bot anything → it auto-logs to the vault.
 Secondary: /log command for guild channels.
-Utility: /status for health check.
+Utility: /status for health check, /verbatim for lossless capture.
 """
 
 import logging
+import re
 import traceback
 
 import discord
 from discord import app_commands
 
 from . import config
-from .llm import extract_metadata
-from .vault import append_capture
+from .llm import extract_metadata, format_verbatim
+from .vault import append_capture, append_verbatim
 from .git_ops import pull, commit, push
 from .distill import distillation_scheduler
 
 logger = logging.getLogger(__name__)
+
+# ── Verbatim trigger detection ────────────────────────────────────────────────
+
+# Patterns that indicate the user wants verbatim mode in a DM.
+# Matched against the start of the message (case-insensitive).
+_VERBATIM_TRIGGERS = re.compile(
+    r"^(?:/verbatim|!verbatim|verbatim[:\s,]|verbatim$)",
+    re.IGNORECASE,
+)
+
+
+def _strip_verbatim_prefix(text: str) -> str:
+    """Remove the verbatim trigger prefix from the message text."""
+    return _VERBATIM_TRIGGERS.sub("", text).strip()
 
 
 class PersonaBot(discord.Client):
@@ -57,6 +72,16 @@ class PersonaBot(discord.Client):
             return
 
         logger.info("DM from %s: %s", message.author.name, message.content[:100])
+
+        # Check for verbatim trigger
+        if _VERBATIM_TRIGGERS.search(message.content):
+            body = _strip_verbatim_prefix(message.content)
+            if body:
+                await self._process_and_log_verbatim(message.channel, body)
+            else:
+                await message.channel.send("📋 Send `/verbatim` with text, or type `verbatim: <your text>`")
+            return
+
         await self._process_and_log(message.channel, message.content, message.author.name)
 
     async def _process_and_log(
@@ -100,6 +125,39 @@ class PersonaBot(discord.Client):
             except Exception:
                 logger.error("Failed to send error message to user")
 
+    async def _process_and_log_verbatim(
+        self,
+        channel: discord.abc.Messageable,
+        text: str,
+    ) -> None:
+        """Verbatim pipeline: format (lossless) → append → sync → reply."""
+        try:
+            async with channel.typing():
+                pull(config.VAULT_PATH)
+
+                # LLM formats/organizes but does NOT summarize
+                formatted = await format_verbatim(text)
+
+                capture_path = append_verbatim(formatted)
+
+                commit(config.VAULT_PATH)
+                sync_success = push(config.VAULT_PATH)
+
+            status = "✅" if sync_success else "⚠️ (saved locally, sync pending)"
+            await channel.send(
+                f"{status} 📋 **Verbatim logged** — {len(text)} chars captured"
+            )
+
+        except Exception as e:
+            logger.error("Verbatim pipeline error: %s\n%s", e, traceback.format_exc())
+            try:
+                await channel.send(
+                    f"❌ Error logging verbatim entry: {type(e).__name__}\n"
+                    f"Your message is safe — I'll retry on next sync."
+                )
+            except Exception:
+                logger.error("Failed to send error message to user")
+
 
 bot = PersonaBot()
 
@@ -127,6 +185,28 @@ async def log_command(interaction: discord.Interaction, text: str):
         )
     except Exception as e:
         logger.error("Slash command error: %s", e)
+        await interaction.followup.send(f"❌ Error: {type(e).__name__} — {e}")
+
+
+@bot.tree.command(name="verbatim", description="Log information verbatim — lossless, no summarization")
+@app_commands.describe(text="Raw info dump — will be formatted but never summarized")
+async def verbatim_command(interaction: discord.Interaction, text: str):
+    """Slash command for lossless verbatim capture."""
+    await interaction.response.defer(thinking=True)
+
+    try:
+        pull(config.VAULT_PATH)
+        formatted = await format_verbatim(text)
+        capture_path = append_verbatim(formatted)
+        commit(config.VAULT_PATH)
+        sync_success = push(config.VAULT_PATH)
+
+        status = "✅" if sync_success else "⚠️ (saved locally, sync pending)"
+        await interaction.followup.send(
+            f"{status} 📋 **Verbatim logged** — {len(text)} chars captured"
+        )
+    except Exception as e:
+        logger.error("Verbatim slash command error: %s", e)
         await interaction.followup.send(f"❌ Error: {type(e).__name__} — {e}")
 
 

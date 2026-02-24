@@ -128,3 +128,31 @@ def get_todays_capture() -> Optional[str]:
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
+
+
+def append_verbatim(formatted_text: str) -> Path:
+    """Append a verbatim (losslessly formatted) entry to today's capture file.
+
+    Unlike append_capture, this skips mood/topics/summary metadata and writes
+    the LLM-formatted text directly with a 📋 verbatim marker.
+
+    Creates the file with frontmatter if it doesn't exist.
+    Returns the path to the capture file.
+    """
+    dt = _now()
+    path = _capture_path(dt)
+
+    # If file doesn't exist, write frontmatter first
+    if not path.exists():
+        logger.info("Creating new daily capture: %s", path.name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(_create_frontmatter(dt))
+
+    timestamp = dt.strftime("%H:%M")
+    entry = f"## {timestamp} — 📋 verbatim\n\n{formatted_text}\n\n---\n\n"
+
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(entry)
+
+    logger.info("Appended verbatim capture to %s at %s", path.name, timestamp)
+    return path
