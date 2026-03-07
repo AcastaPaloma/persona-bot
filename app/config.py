@@ -42,7 +42,7 @@ STATE_DIR: str = ""
 TIMEZONE: str = "America/Toronto"
 DISTILL_HOUR: int = 23
 DISTILL_MINUTE: int = 59
-ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
 LOG_LEVEL: str = "INFO"
 
 
