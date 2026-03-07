@@ -1,5 +1,7 @@
 discord.py
-httpx
+anthropic
 pydantic
 python-dotenv
 pytz
+python-frontmatter
+rapidfuzz

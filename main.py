@@ -1,10 +1,9 @@
-"""Persona Agent — entry point.
+"""Persona Bot — entry point.
 
-Sets up logging, loads config, and starts the Discord bot.
+Sets up logging, loads config, initializes state, and starts the Discord bot.
 """
 
 import logging
-import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -13,16 +12,14 @@ from dotenv import load_dotenv
 
 
 def _setup_logging() -> None:
-    """Configure structured logging with console + rotating file output."""
     log_dir = Path(__file__).parent / "logs"
     log_dir.mkdir(exist_ok=True)
 
     fmt = logging.Formatter(
-        "%(asctime)s │ %(levelname)-8s │ %(name)-20s │ %(message)s",
+        "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # File handler — rotates at 5 MB, keeps 3 backups
     file_handler = RotatingFileHandler(
         log_dir / "agent.log",
         maxBytes=5 * 1024 * 1024,
@@ -32,7 +29,6 @@ def _setup_logging() -> None:
     file_handler.setFormatter(fmt)
     file_handler.setLevel(logging.DEBUG)
 
-    # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(fmt)
     console_handler.setLevel(logging.INFO)
@@ -42,10 +38,10 @@ def _setup_logging() -> None:
         handlers=[file_handler, console_handler],
     )
 
-    # Quiet noisy libraries
     logging.getLogger("discord").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.WARNING)
 
 
 def main() -> None:
@@ -53,13 +49,31 @@ def main() -> None:
     _setup_logging()
 
     logger = logging.getLogger("persona")
-    logger.info("Starting Persona Agent...")
+    logger.info("Starting Persona Bot...")
 
-    # Load and validate config (exits on failure)
     from app import config
     config.load()
 
-    # Import bot after config is loaded so config values are available
+    log_level = getattr(logging, config.LOG_LEVEL.upper(), logging.INFO)
+    logging.getLogger().setLevel(log_level)
+
+    from app.cache import rebuild_all
+    from app.state import get_pending_count
+
+    logger.info("Checking cache state...")
+    cache_dir = Path(config.STATE_DIR) / "cache"
+    note_cards_path = cache_dir / "note_cards.json"
+
+    if not note_cards_path.exists():
+        logger.info("No cached note cards found — running initial cache build...")
+        rebuild_all(use_llm=False)
+        logger.info("Initial cache build complete (LLM enrichment deferred)")
+    else:
+        logger.info("Cache exists — loading from disk")
+
+    pending = get_pending_count()
+    logger.info("Pending captures: %d", pending)
+
     from app.bot import run_bot
     run_bot()
 

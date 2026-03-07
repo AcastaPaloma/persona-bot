@@ -14,6 +14,10 @@ venv/
 # Logs
 logs/
 
+# Machine state (lives outside vault, but if accidentally here)
+.cache/
+state.db
+
 # OS
 .DS_Store
 Thumbs.db
@@ -21,3 +25,4 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.cursor/

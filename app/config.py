@@ -1,15 +1,30 @@
 """Centralized configuration — loads and validates all settings on import."""
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Fixed root folders in the vault taxonomy (immutable)
+ROOT_FOLDERS = frozenset([
+    "01-Daily",
+    "03-People",
+    "04-Projects",
+    "05-Topics",
+    "06-School",
+    "99-Archive",
+    "LifeOutside",
+    "LifeInside",
+    "_Templates",
+])
+
+# Folders to skip when scanning the vault
+SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "_Templates"}
+
 
 def _require_env(key: str) -> str:
-    """Return an env var or exit with a clear error."""
     value = os.getenv(key)
     if not value:
         logger.critical("Missing required environment variable: %s", key)
@@ -19,33 +34,47 @@ def _require_env(key: str) -> str:
 
 # ── Required ──────────────────────────────────────────────────────────────────
 DISCORD_TOKEN: str = ""
-GITHUB_TOKEN: str = ""
+ANTHROPIC_API_KEY: str = ""
 VAULT_PATH: str = ""
 
-# ── Optional (with defaults) ─────────────────────────────────────────────────
+# ── Optional ──────────────────────────────────────────────────────────────────
+STATE_DIR: str = ""
 TIMEZONE: str = "America/Toronto"
-LLM_MODEL: str = "openai/gpt-4.1-mini"
-LLM_ENDPOINT: str = "https://models.github.ai/inference/chat/completions"
-DISTILL_HOUR: int = 23  # 24-h clock, when nightly distillation runs
+DISTILL_HOUR: int = 23
 DISTILL_MINUTE: int = 59
+ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+LOG_LEVEL: str = "INFO"
+
+
+def _resolve_state_dir() -> str:
+    explicit = os.getenv("STATE_DIR")
+    if explicit:
+        return str(Path(explicit).expanduser().resolve())
+
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA", str(Path.home()))
+        return str(Path(base) / "persona-bot")
+
+    return str(Path.home() / ".local" / "share" / "persona-bot")
 
 
 def load() -> None:
     """Call once at startup after dotenv is loaded."""
-    global DISCORD_TOKEN, GITHUB_TOKEN, VAULT_PATH, TIMEZONE
-    global LLM_MODEL, LLM_ENDPOINT, DISTILL_HOUR, DISTILL_MINUTE
+    global DISCORD_TOKEN, ANTHROPIC_API_KEY, VAULT_PATH
+    global STATE_DIR, TIMEZONE, DISTILL_HOUR, DISTILL_MINUTE
+    global ANTHROPIC_MODEL, LOG_LEVEL
 
     DISCORD_TOKEN = _require_env("DISCORD_TOKEN")
-    GITHUB_TOKEN = _require_env("GITHUB_TOKEN")
+    ANTHROPIC_API_KEY = _require_env("ANTHROPIC_API_KEY")
     VAULT_PATH = _require_env("VAULT_PATH")
 
+    STATE_DIR = _resolve_state_dir()
     TIMEZONE = os.getenv("TIMEZONE", TIMEZONE)
-    LLM_MODEL = os.getenv("LLM_MODEL", LLM_MODEL)
-    LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", LLM_ENDPOINT)
     DISTILL_HOUR = int(os.getenv("DISTILL_HOUR", str(DISTILL_HOUR)))
     DISTILL_MINUTE = int(os.getenv("DISTILL_MINUTE", str(DISTILL_MINUTE)))
+    ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", ANTHROPIC_MODEL)
+    LOG_LEVEL = os.getenv("LOG_LEVEL", LOG_LEVEL)
 
-    # Validate vault path exists
     vault = Path(VAULT_PATH)
     if not vault.is_dir():
         logger.critical("VAULT_PATH does not exist: %s", VAULT_PATH)
@@ -54,4 +83,14 @@ def load() -> None:
         logger.critical("VAULT_PATH is not a git repo: %s", VAULT_PATH)
         sys.exit(1)
 
-    logger.info("Config loaded — vault: %s, model: %s", VAULT_PATH, LLM_MODEL)
+    state = Path(STATE_DIR)
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "cache").mkdir(exist_ok=True)
+    (state / "tmp").mkdir(exist_ok=True)
+
+    logger.info(
+        "Config loaded — vault: %s, state: %s, model: %s",
+        VAULT_PATH,
+        STATE_DIR,
+        ANTHROPIC_MODEL,
+    )
