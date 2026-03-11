@@ -231,7 +231,7 @@ def rebuild_folder_archetypes() -> list[FolderArchetype]:
             note_kinds = ["project"]
         elif "School" in folder["root_category"]:
             note_kinds = ["school"]
-        elif "Topics" in folder["root_category"] or "LifeOutside" in folder["root_category"] or "LifeInside" in folder["root_category"]:
+        elif "Topics" in folder["root_category"]:
             if any(
                 kw in folder["path"].lower()
                 for kw in ["technique", "drill", "move"]

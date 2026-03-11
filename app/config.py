@@ -14,9 +14,6 @@ ROOT_FOLDERS = frozenset([
     "04-Projects",
     "05-Topics",
     "06-School",
-    "99-Archive",
-    "LifeOutside",
-    "LifeInside",
     "_Templates",
 ])
 

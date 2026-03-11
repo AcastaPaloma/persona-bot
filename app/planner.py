@@ -250,6 +250,14 @@ def validate_plans(plans: list[NotePlan]) -> tuple[list[NotePlan], list[str]]:
             )
             continue
 
+        # Check if file already exists on disk (prevents overwriting captures/notes)
+        target_file = Path(config.VAULT_PATH) / plan.target_path
+        if target_file.exists():
+            errors.append(
+                f"REJECTED: '{plan.title}' — file already exists at {plan.target_path}"
+            )
+            continue
+
         # Check root placement
         parts = plan.target_path.replace("\\", "/").split("/")
         if len(parts) < 2 or parts[0] not in config.ROOT_FOLDERS:

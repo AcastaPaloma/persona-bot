@@ -170,6 +170,26 @@ def _write_daily_summary(
     captures_summaries: list[str],
     related_notes: list[str],
 ) -> str:
+    path = f"01-Daily/Daily/{date_str}.md"
+    from pathlib import Path as P
+
+    (P(config.VAULT_PATH) / "01-Daily" / "Daily").mkdir(parents=True, exist_ok=True)
+
+    # Check if daily summary already exists (e.g., /distill run twice in one day)
+    from .vault import read_note, append_to_note
+
+    existing = read_note(path)
+    if existing is not None:
+        # Don't overwrite — append new highlights and captures
+        append_content = f"\n\n## Updated {dt.strftime('%H:%M')}\n"
+        append_content += "\n".join(f"- {h}" for h in highlights) + "\n"
+        if captures_summaries:
+            append_content += "\n### Additional Captures\n"
+            append_content += "\n".join(captures_summaries) + "\n"
+        append_to_note(path, append_content)
+        logger.info("Appended to existing daily summary: %s", path)
+        return path
+
     weekday = dt.strftime("%A, %B %d, %Y")
     captures_text = "\n".join(captures_summaries) if captures_summaries else "(no captures)"
 
@@ -182,10 +202,6 @@ def _write_daily_summary(
         created=dt,
     )
 
-    path = f"01-Daily/Daily/{date_str}.md"
-    from pathlib import Path as P
-
-    (P(config.VAULT_PATH) / "01-Daily" / "Daily").mkdir(parents=True, exist_ok=True)
     write_note_atomic(path, content)
     logger.info("Wrote daily summary: %s", path)
     return path

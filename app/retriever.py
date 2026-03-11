@@ -119,13 +119,13 @@ def find_best_folder(
     type_to_root = {
         "entity": ["03-People"],
         "person": ["03-People"],
-        "concept": ["05-Topics", "LifeOutside", "LifeInside"],
+        "concept": ["05-Topics"],
         "fact": ["05-Topics"],
-        "technique": ["05-Topics", "LifeOutside"],
+        "technique": ["05-Topics"],
         "project_update": ["04-Projects"],
         "task": ["04-Projects"],
-        "reflection": ["05-Topics", "LifeInside"],
-        "topic": ["05-Topics", "LifeOutside", "LifeInside"],
+        "reflection": ["05-Topics"],
+        "topic": ["05-Topics"],
         "school": ["06-School"],
     }
 
