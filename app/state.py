@@ -54,6 +54,7 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             author TEXT NOT NULL,
             raw_text TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
             distilled_at TEXT
         );
 
@@ -85,14 +86,15 @@ def insert_capture(event: CaptureEvent) -> None:
     with transaction() as conn:
         conn.execute(
             """INSERT OR IGNORE INTO capture_events
-               (id, timestamp, author, raw_text, status, distilled_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (id, timestamp, author, raw_text, status, attempts, distilled_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 event.id,
                 event.timestamp.isoformat(),
                 event.author,
                 event.raw_text,
                 event.status,
+                event.attempts,
                 event.distilled_at.isoformat() if event.distilled_at else None,
             ),
         )
@@ -103,6 +105,14 @@ def get_pending_captures() -> list[CaptureEvent]:
     rows = conn.execute(
         "SELECT * FROM capture_events WHERE status = 'pending' ORDER BY timestamp"
     ).fetchall()
+
+    # SQLite ALTER TABLE for existing DBs to add attempts
+    try:
+        conn.execute("ALTER TABLE capture_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migrated capture_events table to include 'attempts' column")
+    except sqlite3.OperationalError:
+        pass # Column already exists
+
     return [
         CaptureEvent(
             id=r["id"],
@@ -110,6 +120,7 @@ def get_pending_captures() -> list[CaptureEvent]:
             author=r["author"],
             raw_text=r["raw_text"],
             status=r["status"],
+            attempts=r.get("attempts", 0) or 0,
             distilled_at=(
                 datetime.fromisoformat(r["distilled_at"])
                 if r["distilled_at"]
@@ -130,6 +141,42 @@ def mark_events_distilled(event_ids: list[str]) -> None:
             [(now, eid) for eid in event_ids],
         )
     logger.info("Marked %d capture events as distilled", len(event_ids))
+
+
+def increment_capture_attempts(event_ids: list[str]) -> list[str]:
+    """Increment attempts for events. If attempts >= 3 and recovery enabled, mark as failed.
+
+    Returns:
+        list[str]: IDs of events that were just marked as 'failed' (Dead Letter Queue).
+    """
+    if not event_ids:
+        return []
+
+    failed_ids = []
+    with transaction() as conn:
+        # Increment all
+        conn.executemany(
+            "UPDATE capture_events SET attempts = attempts + 1 WHERE id = ?",
+            [(eid,) for eid in event_ids]
+        )
+
+        if config.ENABLE_ERROR_RECOVERY:
+            # Find which ones hit the limit
+            rows = conn.execute(
+                f"SELECT id FROM capture_events WHERE attempts >= 3 AND status = 'pending' AND id IN ({','.join(['?']*len(event_ids))})",
+                event_ids
+            ).fetchall()
+            failed_ids = [r["id"] for r in rows]
+
+            # Mark them as failed
+            if failed_ids:
+                conn.executemany(
+                    "UPDATE capture_events SET status = 'failed' WHERE id = ?",
+                    [(fid,) for fid in failed_ids]
+                )
+                logger.warning("Marked %d captures as failed (Dead-Letter Queue)", len(failed_ids))
+
+    return failed_ids
 
 
 def get_pending_count() -> int:

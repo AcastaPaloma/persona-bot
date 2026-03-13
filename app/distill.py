@@ -64,6 +64,11 @@ async def run_distillation() -> DistillationResult:
                 logger.info("No pending captures — skipping distillation")
                 return result
 
+            # Extra safety check
+            if config.ENABLE_SMART_DISTILL_CRON and len(pending) == 0:
+                logger.debug("Smart CRON: Skipping because of 0 pending.")
+                return result
+
             logger.info("Found %d pending capture events", len(pending))
 
             # Refresh caches (deterministic, no LLM)
@@ -159,6 +164,17 @@ async def run_distillation() -> DistillationResult:
         except Exception as e:
             logger.error("Distillation failed: %s", e, exc_info=True)
             result.errors.append(f"Pipeline error: {e}")
+
+            # Dead-Letter Queue Handling
+            from .state import increment_capture_attempts
+            if pending:
+                failed_ids = increment_capture_attempts([p.id for p in pending])
+                if failed_ids and hasattr(config, "BOT_REF") and config.BOT_REF:
+                    # Async task to DM the user
+                    asyncio.create_task(config.BOT_REF._dm_user(
+                        f"🚨 **Distillation Failed permanently** for {len(failed_ids)} capture events. "
+                        f"They have been moved to the Dead-Letter Queue to prevent infinite loops."
+                    ))
 
     return result
 
@@ -264,11 +280,17 @@ async def distillation_scheduler(bot) -> None:
         await asyncio.sleep(wait_seconds)
 
         try:
-            result = await run_distillation()
-            if result.errors:
-                logger.warning(
-                    "Distillation completed with %d errors", len(result.errors)
-                )
+            from .state import get_pending_count
+
+            # Smart Distill Cron check
+            if config.ENABLE_SMART_DISTILL_CRON and get_pending_count() == 0:
+                logger.info("Smart Cron: 0 pending captures, skipping tonight's distillation.")
+            else:
+                result = await run_distillation()
+                if result.errors:
+                    logger.warning(
+                        "Distillation completed with %d errors", len(result.errors)
+                    )
         except Exception as e:
             logger.error("Distillation scheduler error: %s", e, exc_info=True)
 

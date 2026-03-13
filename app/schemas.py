@@ -16,7 +16,8 @@ class CaptureEvent(BaseModel):
     timestamp: datetime = Field(description="When the message was sent (tz-aware)")
     author: str = Field(description="Discord username")
     raw_text: str = Field(description="Full message content")
-    status: Literal["pending", "distilled"] = "pending"
+    status: Literal["pending", "distilled", "failed"] = "pending"
+    attempts: int = Field(default=0, description="Number of times distillation was attempted")
     distilled_at: Optional[datetime] = None
 
 
