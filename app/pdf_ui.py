@@ -98,7 +98,8 @@ async def process_pdf(prompt_focus: str, bot, channel, attachment, author, messa
             lx.providers.load_builtins_once()
             lx.providers.load_plugins_once()
 
-            result = lx.extract(**kwargs)
+            import asyncio
+            result = await asyncio.to_thread(lx.extract, **kwargs)
 
             if not result.extractions:
                  await progress_msg.edit(content="❌ Langextract found nothing matching your criteria.")

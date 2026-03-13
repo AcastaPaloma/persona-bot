@@ -79,6 +79,13 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         );
     """)
 
+    # SQLite ALTER TABLE for existing DBs to add new columns from recent updates
+    try:
+        conn.execute("ALTER TABLE capture_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migrated capture_events table to include 'attempts' column")
+    except sqlite3.OperationalError:
+        pass # Column already exists
+
 
 # ── Capture Events ────────────────────────────────────────────────────────────
 
@@ -105,13 +112,6 @@ def get_pending_captures() -> list[CaptureEvent]:
     rows = conn.execute(
         "SELECT * FROM capture_events WHERE status = 'pending' ORDER BY timestamp"
     ).fetchall()
-
-    # SQLite ALTER TABLE for existing DBs to add attempts
-    try:
-        conn.execute("ALTER TABLE capture_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
-        logger.info("Migrated capture_events table to include 'attempts' column")
-    except sqlite3.OperationalError:
-        pass # Column already exists
 
     return [
         CaptureEvent(
