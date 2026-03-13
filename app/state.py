@@ -120,7 +120,7 @@ def get_pending_captures() -> list[CaptureEvent]:
             author=r["author"],
             raw_text=r["raw_text"],
             status=r["status"],
-            attempts=r.get("attempts", 0) or 0,
+            attempts=r["attempts"],
             distilled_at=(
                 datetime.fromisoformat(r["distilled_at"])
                 if r["distilled_at"]
